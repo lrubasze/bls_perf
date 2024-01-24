@@ -34,8 +34,10 @@ mod bls12381;
 mod cli;
 #[macro_use]
 mod utils;
+mod keccak256;
 
 pub use bls12381::*;
+pub use keccak256::*;
 pub use utils::*;
 
 fn main() {

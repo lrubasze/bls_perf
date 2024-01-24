@@ -1,4 +1,5 @@
 use crate::bls12381::*;
+use crate::keccak256_hash;
 use crate::perf;
 use clap::{Parser, Subcommand};
 use once_cell::sync::OnceCell;
@@ -60,6 +61,7 @@ enum Commands {
     FastAggregateVerify(AggregateVerify),
     SignatureAggregate(SignatureAggregate),
     HashToPoint(HashToPoint),
+    Keccak256(Verify),
 }
 /*
 #[inline]
@@ -298,6 +300,25 @@ fn cli_measure_hash_to_point(cmd: &HashToPoint) {
     perf!("hash_to_point", hash_to_g2(&msg));
 }
 
+fn cli_measure_keccak256(cmd: &Verify) {
+    let msg: Vec<u8> = vec![(cmd.msg_size % u8::MAX as usize) as u8; cmd.msg_size];
+    /*
+        println!("waiting");
+        let wait_secs = time::Duration::from_secs(2);
+
+        thread::sleep(wait_secs);
+        println!("go");
+    */
+    let (_, _) = perf!("measured_keccak256", keccak256_hash(&msg));
+    /*
+    println!(
+        "{:20} instr:{}",
+        "total threaded",
+        verify_instructions(cmd.msg_size),
+    );
+    */
+}
+
 pub fn run() {
     let cli = Cli::parse();
 
@@ -327,6 +348,9 @@ pub fn run() {
         }
         Commands::HashToPoint(args) => {
             cli_measure_hash_to_point(args);
+        }
+        Commands::Keccak256(args) => {
+            cli_measure_keccak256(args);
         }
     }
 }
