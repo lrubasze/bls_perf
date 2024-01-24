@@ -106,6 +106,27 @@ pub fn get_aggregate_verify_test_data2(
     (sks, pks, msgs, sigs)
 }
 
+pub fn get_fast_aggregate_verify_test_data(
+    cnt: u32,
+    msg_size: usize,
+) -> (
+    Vec<Bls12381G1PrivateKey>,
+    Vec<Bls12381G1PublicKey>,
+    Vec<u8>,
+    Vec<Bls12381G2Signature>,
+) {
+    let sks: Vec<Bls12381G1PrivateKey> = (1..(cnt + 1))
+        .map(|i| Bls12381G1PrivateKey::from_u64(i.into()).unwrap())
+        .collect();
+
+    let msg: Vec<u8> = vec![(cnt % u8::MAX as u32) as u8; msg_size];
+
+    let sigs: Vec<Bls12381G2Signature> = sks.iter().map(|sk| sk.sign_v1(&msg)).collect();
+    let pks: Vec<Bls12381G1PublicKey> = sks.iter().map(|sk| sk.public_key()).collect();
+
+    (sks, pks, msg, sigs)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
