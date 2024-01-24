@@ -1,0 +1,16 @@
+[package]
+name = "bls_costing"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = { version = "4.4.11", features = ["derive"] }
+count_instructions = { version = "0.1.4" }
+#blst = { version = "0.3.11", default-features = false, optional = false }
+blst = { path = "blst/bindings/rust", default-features = false, optional = false }
+hex = { version = "0.4.3", default-features = false, features = ["std", "serde"] }
+serde = { version = "1.0.137", default-features = false, features=["derive"] }
+perf-event = { version = "0.4.8" }
+once_cell = { version = "1.19.0" }
