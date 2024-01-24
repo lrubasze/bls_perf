@@ -46,97 +46,69 @@ enum Commands {
     AggregateVerifyThreaded(AggregateVerify),
     HashToPoint(HashToPoint),
 }
-
+/*
 #[inline]
 fn cast<T>(a: T) -> u32
 where
     u32: TryFrom<T>,
 {
-    u32::try_from(a).unwrap_or(u32::MAX)
+    u32::try_from(a).unwrap()
+}
+*/
+#[inline]
+fn cast(a: usize) -> u32 {
+    u32::try_from(a).unwrap()
 }
 
-fn pairing_aggregate_costs(input_sizes: &[usize]) -> u32 {
-    // ŷ = 34.42199X + 2620295.64271
-    // y = 35 * x + 2620296
-    // Observed that every 7th key additional 16850000 are performed
-    let mut costs = 0usize;
+#[inline]
+fn add(a: u32, b: u32) -> u32 {
+    a.checked_add(b).unwrap()
+}
 
-    for s in input_sizes {
-        costs += 35 * s + 2620296;
+#[inline]
+fn sub(a: u32, b: u32) -> u32 {
+    a.checked_sub(b).unwrap()
+}
+
+#[inline]
+fn mul(a: u32, b: u32) -> u32 {
+    a.checked_mul(b).unwrap()
+}
+
+fn total_costs_no_threaded(sizes: &[usize]) -> u32 {
+    let mut instructions_cnt = 0;
+    for s in sizes {
+        instructions_cnt = add(add(instructions_cnt, mul(35, cast(*s))), 2620296);
     }
-    let mut multiplier = input_sizes.len() / 7;
-    /*
-        let mut m = input_sizes.len() as i32 % 7;
-        let mut d = (input_sizes.len() / 7) as i32;
+    let multiplier = cast(sizes.len() / 8);
 
-        println!(
-            "len: {} multiplier: {} m: {} d: {}",
-            input_sizes.len(),
-            multiplier,
-            m,
-            d
-        );
+    instructions_cnt = add(instructions_cnt, mul(multiplier, 16850000));
 
-        if d > 7 {
-            multiplier -= usize::try_from(d).unwrap() / 7;
-            d = d % 7; // - 1;
-        }
+    // Pairing commit
+    // Observed that number commit instructions repeats every multiple of 8
+    instructions_cnt = add(
+        instructions_cnt,
+        match sizes.len() % 8 {
+            0 => 0,
+            1 => 3051556,
+            2 => 5020768,
+            3 => 6990111,
+            4 => 8959454,
+            5 => 10928798,
+            6 => 12898141,
+            7 => 14867484,
+            _ => unreachable!(),
+        },
+    );
 
-        if m < d {
-            multiplier -= 1;
-        }
-
-        println!(
-            "pa:{} m:{} d:{} d%7:{} cond1:{:?} cond2:{:?} multiplier: {}",
-            costs,
-            m,
-            d,
-            d % 7,
-            (m >= d % 7),
-            m < d,
-            multiplier
-        );
-    */
-    costs += multiplier * 16850000;
-
-    println!("pa:{} multiplier: {}", costs, multiplier);
-    //println!("pa:{} ", costs);
-    cast(costs)
-}
-
-fn pairing_commit_costs(input_sizes: &[usize]) -> u32 {
-    let costs = match input_sizes.len() % 8 {
-        1 => 3051556_u32,
-        2 => 5020768_u32,
-        3 => 6990111_u32,
-        4 => 8959454_u32,
-        5 => 10928798_u32,
-        6 => 12898141_u32,
-        7 => 14867484_u32,
-        0 => 0,
-        _ => unreachable!(),
-    };
-    println!("pc:{}", costs);
-    costs
-}
-
-fn total_costs_no_threaded(input_sizes: &[usize]) -> u32 {
-    let mut costs = pairing_aggregate_costs(input_sizes);
-    costs += pairing_commit_costs(input_sizes);
-
-    // Operations that do not depend on input size
-    // Signature from bytes : 281125 instructions
-    // Signature Validate   : 583573
-    // Pairing Aggregated   : 3027639
-    // Pairing finalVerify  : 4280077
-    costs += 281125 + 583573 + 3027639 + 4280077;
-    costs
+    // Instructions that do not depend on size
+    instructions_cnt = add(instructions_cnt, 281125 + 583573 + 3027639 + 4280077);
+    instructions_cnt
 }
 
 fn total_costs_threaded(no_threaded_instructions: u32) -> u32 {
     // Observed that threaded takes ~1.21 more instructions than no threaded
-    let instructions: u64 = (no_threaded_instructions as u64 * 121) / 100;
-    cast(instructions)
+    mul(no_threaded_instructions / 100, 121)
 }
 
 fn cli_measure_aggregate_verify(threaded: bool, cmd: &AggregateVerify) {
@@ -149,15 +121,12 @@ fn cli_measure_aggregate_verify(threaded: bool, cmd: &AggregateVerify) {
     let pub_keys_msgs: Vec<(Bls12381G1PublicKey, Vec<u8>)> =
         pks.iter().zip(msgs).map(|(pk, sk)| (*pk, sk)).collect();
 
-    // Verify the messages against public keys and aggregated signature
-    //measure!(aggregate_verify_bls12381_v1(&pub_keys_msgs, &agg_sig));
-    /*
-        println!("waiting");
-        let wait_secs = time::Duration::from_secs(2);
+    println!("waiting");
+    let wait_secs = time::Duration::from_secs(2);
 
-        thread::sleep(wait_secs);
-        println!("go");
-    */
+    thread::sleep(wait_secs);
+    println!("go");
+
     let sizes: Vec<usize> = pub_keys_msgs.iter().map(|(_, msg)| msg.len()).collect();
     let no_threaded_instructions = total_costs_no_threaded(sizes.as_slice());
     let threaded_instructions = total_costs_threaded(no_threaded_instructions);
