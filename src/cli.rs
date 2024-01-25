@@ -92,7 +92,7 @@ fn mul(a: u32, b: u32) -> u32 {
     a.checked_mul(b).unwrap()
 }
 
-fn aggregate_verify_instructions_no_threaded(sizes: &[usize]) -> u32 {
+fn calc_aggregate_verify_instructions_no_threaded(sizes: &[usize]) -> u32 {
     let mut instructions_cnt = 0;
     for s in sizes {
         instructions_cnt = add(add(instructions_cnt, mul(35, cast(*s))), 2620296);
@@ -123,7 +123,7 @@ fn aggregate_verify_instructions_no_threaded(sizes: &[usize]) -> u32 {
     instructions_cnt
 }
 
-fn aggregate_verify_instructions_threaded(no_threaded_instructions: u32) -> u32 {
+fn calc_aggregate_verify_instructions_threaded(no_threaded_instructions: u32) -> u32 {
     // Observed that threaded takes ~1.21 more instructions than no threaded
     mul(no_threaded_instructions / 100, 121)
 }
@@ -178,7 +178,57 @@ fn cli_measure_fast_aggregate_verify(cmd: &AggregateVerify) {
     );
 }
 
-fn cli_measure_aggregate_verify(threaded: bool, cmd: &AggregateVerify) {
+fn cli_measure_aggregate_verify(
+    threaded: bool,
+    pub_keys_msgs: &[(Bls12381G1PublicKey, Vec<u8>)],
+    agg_sig: &Bls12381G2Signature,
+) {
+    let sizes: Vec<usize> = pub_keys_msgs.iter().map(|(_, msg)| msg.len()).collect();
+
+    let no_threaded_instructions = calc_aggregate_verify_instructions_no_threaded(sizes.as_slice());
+    let threaded_instructions =
+        calc_aggregate_verify_instructions_threaded(no_threaded_instructions);
+
+    if threaded {
+        let (_, count) = perf!(
+            "total_instructions_threaded",
+            aggregate_verify_bls12381_v1_threaded(pub_keys_msgs, agg_sig)
+        );
+        println!(
+            "{:30}: {}",
+            "calc_instructions_no_threaded", no_threaded_instructions
+        );
+        let diff = if count != 0 {
+            format!(" diff: {}", threaded_instructions as i64 - count as i64)
+        } else {
+            "".to_string()
+        };
+        println!(
+            "{:30}: {}{}",
+            "calc_instructions_threaded", threaded_instructions, diff
+        );
+    } else {
+        let (_, count) = perf!(
+            "total_instructions_no_threaded",
+            aggregate_verify_bls12381_v1(pub_keys_msgs, agg_sig)
+        );
+        let diff = if count != 0 {
+            format!(" diff : {}", no_threaded_instructions as i64 - count as i64)
+        } else {
+            "".to_string()
+        };
+        println!(
+            "{:30}: {}{}",
+            "calc_instructions_no_threaded", no_threaded_instructions, diff
+        );
+        println!(
+            "{:30}: {}",
+            "calc_instructions_threaded", threaded_instructions
+        );
+    }
+}
+
+fn cli_cmd_measure_aggregate_verify(threaded: bool, cmd: &AggregateVerify) {
     let (_sks, pks, msgs, sigs) =
         get_aggregate_verify_test_data(cmd.msg_cnt, cmd.msg_cnt, cmd.msg_size);
 
@@ -190,42 +240,11 @@ fn cli_measure_aggregate_verify(threaded: bool, cmd: &AggregateVerify) {
 
     println!("waiting");
     let wait_secs = time::Duration::from_secs(2);
-
     thread::sleep(wait_secs);
     println!("go");
 
-    let sizes: Vec<usize> = pub_keys_msgs.iter().map(|(_, msg)| msg.len()).collect();
-    let no_threaded_instructions = aggregate_verify_instructions_no_threaded(sizes.as_slice());
-    let threaded_instructions = aggregate_verify_instructions_threaded(no_threaded_instructions);
-
-    if threaded {
-        let (_, count) = perf!(
-            "total agg",
-            aggregate_verify_bls12381_v1_threaded(&pub_keys_msgs, &agg_sig)
-        );
-        println!(
-            "{:20} instr:{}",
-            "total no-threaded", no_threaded_instructions
-        );
-        println!(
-            "{:20} instr:{}: diff:{}",
-            "total threaded",
-            threaded_instructions,
-            threaded_instructions as i64 - count as i64
-        );
-    } else {
-        let (_, count) = perf!(
-            "total agg",
-            aggregate_verify_bls12381_v1(&pub_keys_msgs, &agg_sig)
-        );
-        println!(
-            "{:20} instr:{} diff:{}",
-            "total no-threaded",
-            no_threaded_instructions,
-            no_threaded_instructions as i64 - count as i64
-        );
-        println!("{:20} instr:{}", "total threaded", threaded_instructions);
-    }
+    println!("aggregate_verify");
+    cli_measure_aggregate_verify(threaded, &pub_keys_msgs, &agg_sig);
 }
 
 fn cli_measure_aggregate_verify_sizes(threaded: bool, cmd: &AggregateVerifySizes) {
@@ -237,48 +256,13 @@ fn cli_measure_aggregate_verify_sizes(threaded: bool, cmd: &AggregateVerifySizes
     let pub_keys_msgs: Vec<(Bls12381G1PublicKey, Vec<u8>)> =
         pks.iter().zip(msgs).map(|(pk, sk)| (*pk, sk)).collect();
 
-    // Verify the messages against public keys and aggregated signature
-    //measure!(aggregate_verify_bls12381_v1(&pub_keys_msgs, &agg_sig));
-    /*
-        println!("waiting");
-        let wait_secs = time::Duration::from_secs(2);
+    println!("waiting");
+    let wait_secs = time::Duration::from_secs(2);
+    thread::sleep(wait_secs);
+    println!("go");
 
-        thread::sleep(wait_secs);
-        println!("go");
-    */
-    //let sizes: Vec<usize> = pub_keys_msgs.iter().map(|(_, msg)| msg.len()).collect();
-    let no_threaded_instructions =
-        aggregate_verify_instructions_no_threaded(cmd.msg_sizes.as_slice());
-    let threaded_instructions = aggregate_verify_instructions_threaded(no_threaded_instructions);
-
-    if threaded {
-        let (_, count) = perf!(
-            "total agg",
-            aggregate_verify_bls12381_v1_threaded(&pub_keys_msgs, &agg_sig)
-        );
-        println!(
-            "{:20} instr:{}",
-            "total no-threaded", no_threaded_instructions
-        );
-        println!(
-            "{:20} instr:{}: diff:{}",
-            "total threaded",
-            threaded_instructions,
-            threaded_instructions as i64 - count as i64
-        );
-    } else {
-        let (_, count) = perf!(
-            "total agg",
-            aggregate_verify_bls12381_v1(&pub_keys_msgs, &agg_sig)
-        );
-        println!(
-            "{:20} instr:{} diff:{}",
-            "total no-threaded",
-            no_threaded_instructions,
-            no_threaded_instructions as i64 - count as i64
-        );
-        println!("{:20} instr:{}", "total threaded", threaded_instructions);
-    }
+    println!("aggregate_verify_sizes");
+    cli_measure_aggregate_verify(threaded, &pub_keys_msgs, &agg_sig);
 }
 
 fn cli_measure_signature_aggregate(cmd: &SignatureAggregate) {
@@ -286,6 +270,7 @@ fn cli_measure_signature_aggregate(cmd: &SignatureAggregate) {
 
     let (_, count) = perf!("measured_sig_aggr", Bls12381G2Signature::aggregate(&sigs));
     let calc_sig_aggr_instr_cnt = signature_aggregate_instructions(cmd.sig_cnt);
+
     println!(
         "{:20} instr:{} diff:{}",
         "calc_sig_agr",
@@ -302,21 +287,8 @@ fn cli_measure_hash_to_point(cmd: &HashToPoint) {
 
 fn cli_measure_keccak256(cmd: &Verify) {
     let msg: Vec<u8> = vec![(cmd.msg_size % u8::MAX as usize) as u8; cmd.msg_size];
-    /*
-        println!("waiting");
-        let wait_secs = time::Duration::from_secs(2);
 
-        thread::sleep(wait_secs);
-        println!("go");
-    */
-    let (_, _) = perf!("measured_keccak256", keccak256_hash(&msg));
-    /*
-    println!(
-        "{:20} instr:{}",
-        "total threaded",
-        verify_instructions(cmd.msg_size),
-    );
-    */
+    perf!("measured_keccak256", keccak256_hash(&msg));
 }
 
 pub fn run() {
@@ -332,13 +304,13 @@ pub fn run() {
             cli_measure_verify(args);
         }
         Commands::AggregateVerify(args) => {
-            cli_measure_aggregate_verify(false, args);
+            cli_cmd_measure_aggregate_verify(false, args);
         }
         Commands::AggregateVerifySizes(args) => {
             cli_measure_aggregate_verify_sizes(false, args);
         }
         Commands::AggregateVerifyThreaded(args) => {
-            cli_measure_aggregate_verify(true, args);
+            cli_cmd_measure_aggregate_verify(true, args);
         }
         Commands::FastAggregateVerify(args) => {
             cli_measure_fast_aggregate_verify(args);

@@ -45,7 +45,7 @@ macro_rules! perf {
                     },
                 )
                 .unwrap();
-                println!("{:20} instr:{:?}", $desc, count);
+                println!("{:30}: {:?}", $desc, count);
                 (result, count)
             }
             "perf" => {
@@ -60,7 +60,7 @@ macro_rules! perf {
                 let result = $closure;
                 group.disable().unwrap();
                 let counts = group.read().unwrap();
-                println!("{:20} instr:{:?}", $desc, counts[&insns]);
+                println!("{:30}: {:?}", $desc, counts[&insns]);
                 (result, counts[&insns])
             }
             "none" => ($closure, 0),
