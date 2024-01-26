@@ -1,5 +1,5 @@
 [package]
-name = "bls_costing"
+name = "bls_perf"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,8 +8,8 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.4.11", features = ["derive"] }
 count_instructions = { version = "0.1.4" }
-#blst = { version = "0.3.11", default-features = false, optional = false }
-blst = { path = "blst/bindings/rust", default-features = false, optional = false }
+blst = { version = "0.3.11", default-features = false, optional = false }
+#blst = { path = "blst/bindings/rust", default-features = false, optional = false }
 sha3 = { version = "0.10.8", default-features = false, optional = false }
 hex = { version = "0.4.3", default-features = false, features = ["std", "serde"] }
 serde = { version = "1.0.137", default-features = false, features=["derive"] }
