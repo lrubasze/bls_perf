@@ -1,4 +1,5 @@
 use crate::bls12381::*;
+use crate::calc;
 use crate::keccak256_hash;
 use crate::perf;
 use clap::{Parser, Subcommand};
@@ -12,6 +13,7 @@ pub static MEASURE_METHOD: OnceCell<Mutex<String>> = OnceCell::new();
 #[derive(Parser)]
 #[command(author, version, about, long_about, verbatim_doc_comment)]
 #[command(propagate_version = true)]
+/// Measure number of instructions of below commands
 struct Cli {
     #[arg(long, short = 'm', default_value_t = MEASURE_METHOD_DFLT.to_string())]
     /// available methods: perf, count, none
@@ -66,73 +68,6 @@ enum Commands {
     Keccak256(Verify),
 }
 
-#[inline]
-fn cast(a: usize) -> u32 {
-    u32::try_from(a).unwrap()
-}
-
-#[inline]
-fn add(a: u32, b: u32) -> u32 {
-    a.checked_add(b).unwrap()
-}
-
-#[inline]
-fn sub(a: u32, b: u32) -> u32 {
-    a.checked_sub(b).unwrap()
-}
-
-#[inline]
-fn mul(a: u32, b: u32) -> u32 {
-    a.checked_mul(b).unwrap()
-}
-
-fn calc_aggregate_verify_instructions_no_threaded(sizes: &[usize]) -> u32 {
-    let mut instructions_cnt = 0;
-    for s in sizes {
-        instructions_cnt = add(add(instructions_cnt, mul(35, cast(*s))), 2620296);
-    }
-    let multiplier = cast(sizes.len() / 8);
-
-    instructions_cnt = add(instructions_cnt, mul(multiplier, 16850000));
-
-    // Pairing commit
-    // Observed that number commit instructions repeats every multiple of 8
-    instructions_cnt = add(
-        instructions_cnt,
-        match sizes.len() % 8 {
-            0 => 0,
-            1 => 3051556,
-            2 => 5020768,
-            3 => 6990111,
-            4 => 8959454,
-            5 => 10928798,
-            6 => 12898141,
-            7 => 14867484,
-            _ => unreachable!(),
-        },
-    );
-
-    // Instructions that do not depend on size
-    instructions_cnt = add(instructions_cnt, 281125 + 583573 + 3027639 + 4280077);
-    instructions_cnt
-}
-
-fn calc_aggregate_verify_instructions_threaded(no_threaded_instructions: u32) -> u32 {
-    // Observed that threaded takes ~1.21 more instructions than no threaded
-    mul(no_threaded_instructions / 100, 121)
-}
-
-fn calc_verify_instructions(size: usize) -> u32 {
-    add(mul(cast(size), 36), 15650000)
-}
-
-fn calc_fast_aggregate_verify_instructions(cnt: u32, size: usize) -> u32 {
-    add(add(mul(cast(size), 36), mul(cnt, 626056)), 15200000)
-}
-fn calc_signature_aggregate_instructions(cnt: u32) -> u32 {
-    sub(mul(cnt, 879554), 500000)
-}
-
 fn cli_measure_verify(cmd: &Verify) {
     let (_sks, pks, msgs, sigs) = get_aggregate_verify_test_data(1, 1, cmd.msg_size);
 
@@ -144,7 +79,7 @@ fn cli_measure_verify(cmd: &Verify) {
     println!(
         "{:30}: {}",
         "calc_instructions",
-        calc_verify_instructions(cmd.msg_size)
+        calc::calc_verify_instructions(cmd.msg_size)
     );
 }
 
@@ -159,7 +94,8 @@ fn cli_measure_fast_aggregate_verify(cmd: &AggregateVerify) {
         "total_instructions",
         fast_aggregate_verify_bls12381_v1(&msg, &pks, &agg_sig)
     );
-    let calc_instructions = calc_fast_aggregate_verify_instructions(cmd.msg_cnt, cmd.msg_size);
+    let calc_instructions =
+        calc::calc_fast_aggregate_verify_instructions(cmd.msg_cnt, cmd.msg_size);
     println!(
         "{:30}: {} diff: {}",
         "calc_instructions",
@@ -175,11 +111,12 @@ fn cli_measure_aggregate_verify(
 ) {
     let sizes: Vec<usize> = pub_keys_msgs.iter().map(|(_, msg)| msg.len()).collect();
 
-    let mut calc_instructions = calc_aggregate_verify_instructions_no_threaded(sizes.as_slice());
+    let mut calc_instructions =
+        calc::calc_aggregate_verify_instructions_no_threaded(sizes.as_slice());
 
     let (_, count) = if threaded {
         println!("aggregate_verify threaded");
-        calc_instructions = calc_aggregate_verify_instructions_threaded(calc_instructions);
+        calc_instructions = calc::calc_aggregate_verify_instructions_threaded(calc_instructions);
 
         perf!(
             "total_instructions",
@@ -231,7 +168,7 @@ fn cli_measure_signature_aggregate(cmd: &SignatureAggregate) {
 
     println!("signature_aggregate");
     let (_, count) = perf!("measured_sig_aggr", Bls12381G2Signature::aggregate(&sigs));
-    let calc_instructions = calc_signature_aggregate_instructions(cmd.sig_cnt);
+    let calc_instructions = calc::calc_signature_aggregate_instructions(cmd.sig_cnt);
 
     println!(
         "{:30}: {} diff: {}",
