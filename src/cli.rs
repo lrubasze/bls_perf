@@ -4,7 +4,6 @@ use crate::perf;
 use clap::{Parser, Subcommand};
 use once_cell::sync::OnceCell;
 use std::sync::Mutex;
-use std::{thread, time};
 
 const MEASURE_METHOD_DFLT: &str = "perf";
 
@@ -15,6 +14,9 @@ pub static MEASURE_METHOD: OnceCell<Mutex<String>> = OnceCell::new();
 #[command(propagate_version = true)]
 struct Cli {
     #[arg(long, short = 'm', default_value_t = MEASURE_METHOD_DFLT.to_string())]
+    /// available methods: perf, count, none
+    /// for 'perf' method following command shall be issued:
+    ///   sudo bash -c "echo -1 > /proc/sys/kernel/perf_event_paranoid"
     measure_method: String,
     #[command(subcommand)]
     command: Commands,
@@ -141,11 +143,6 @@ fn signature_aggregate_instructions(cnt: u32) -> u32 {
 
 fn cli_measure_verify(cmd: &Verify) {
     let (_sks, pks, msgs, sigs) = get_aggregate_verify_test_data(1, 1, cmd.msg_size);
-    println!("waiting");
-    let wait_secs = time::Duration::from_secs(2);
-
-    thread::sleep(wait_secs);
-    println!("go");
 
     let (_, _) = perf!("total agg", verify_bls12381_v1(&msgs[0], &pks[0], &sigs[0]));
     println!(
@@ -160,12 +157,6 @@ fn cli_measure_fast_aggregate_verify(cmd: &AggregateVerify) {
 
     // Aggregate the signature
     let agg_sig = Bls12381G2Signature::aggregate(&sigs).unwrap();
-
-    println!("waiting");
-    let wait_secs = time::Duration::from_secs(2);
-
-    thread::sleep(wait_secs);
-    println!("go");
 
     let (_, _) = perf!(
         "total agg",
@@ -238,11 +229,6 @@ fn cli_cmd_measure_aggregate_verify(threaded: bool, cmd: &AggregateVerify) {
     let pub_keys_msgs: Vec<(Bls12381G1PublicKey, Vec<u8>)> =
         pks.iter().zip(msgs).map(|(pk, sk)| (*pk, sk)).collect();
 
-    println!("waiting");
-    let wait_secs = time::Duration::from_secs(2);
-    thread::sleep(wait_secs);
-    println!("go");
-
     println!("aggregate_verify");
     cli_measure_aggregate_verify(threaded, &pub_keys_msgs, &agg_sig);
 }
@@ -255,11 +241,6 @@ fn cli_measure_aggregate_verify_sizes(threaded: bool, cmd: &AggregateVerifySizes
 
     let pub_keys_msgs: Vec<(Bls12381G1PublicKey, Vec<u8>)> =
         pks.iter().zip(msgs).map(|(pk, sk)| (*pk, sk)).collect();
-
-    println!("waiting");
-    let wait_secs = time::Duration::from_secs(2);
-    thread::sleep(wait_secs);
-    println!("go");
 
     println!("aggregate_verify_sizes");
     cli_measure_aggregate_verify(threaded, &pub_keys_msgs, &agg_sig);
