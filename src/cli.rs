@@ -65,15 +65,7 @@ enum Commands {
     HashToPoint(HashToPoint),
     Keccak256(Verify),
 }
-/*
-#[inline]
-fn cast<T>(a: T) -> u32
-where
-    u32: TryFrom<T>,
-{
-    u32::try_from(a).unwrap()
-}
-*/
+
 #[inline]
 fn cast(a: usize) -> u32 {
     u32::try_from(a).unwrap()
@@ -130,25 +122,29 @@ fn calc_aggregate_verify_instructions_threaded(no_threaded_instructions: u32) ->
     mul(no_threaded_instructions / 100, 121)
 }
 
-fn verify_instructions(size: usize) -> u32 {
+fn calc_verify_instructions(size: usize) -> u32 {
     add(mul(cast(size), 36), 15650000)
 }
 
-fn fast_aggregate_verify_instructions(cnt: u32, size: usize) -> u32 {
+fn calc_fast_aggregate_verify_instructions(cnt: u32, size: usize) -> u32 {
     add(add(mul(cast(size), 36), mul(cnt, 626056)), 15200000)
 }
-fn signature_aggregate_instructions(cnt: u32) -> u32 {
+fn calc_signature_aggregate_instructions(cnt: u32) -> u32 {
     sub(mul(cnt, 879554), 500000)
 }
 
 fn cli_measure_verify(cmd: &Verify) {
     let (_sks, pks, msgs, sigs) = get_aggregate_verify_test_data(1, 1, cmd.msg_size);
 
-    let (_, _) = perf!("total agg", verify_bls12381_v1(&msgs[0], &pks[0], &sigs[0]));
+    println!("verify");
+    let (_, _) = perf!(
+        "total instructions",
+        verify_bls12381_v1(&msgs[0], &pks[0], &sigs[0])
+    );
     println!(
-        "{:20} instr:{}",
-        "total threaded",
-        verify_instructions(cmd.msg_size),
+        "{:30}: {}",
+        "calc_instructions",
+        calc_verify_instructions(cmd.msg_size)
     );
 }
 
@@ -158,14 +154,17 @@ fn cli_measure_fast_aggregate_verify(cmd: &AggregateVerify) {
     // Aggregate the signature
     let agg_sig = Bls12381G2Signature::aggregate(&sigs).unwrap();
 
-    let (_, _) = perf!(
-        "total agg",
+    println!("fast_aggregate_verify");
+    let (_, count) = perf!(
+        "total_instructions",
         fast_aggregate_verify_bls12381_v1(&msg, &pks, &agg_sig)
     );
+    let calc_instructions = calc_fast_aggregate_verify_instructions(cmd.msg_cnt, cmd.msg_size);
     println!(
-        "{:20} instr:{}",
-        "total threaded",
-        fast_aggregate_verify_instructions(cmd.msg_cnt, cmd.msg_size),
+        "{:30}: {} diff: {}",
+        "calc_instructions",
+        calc_instructions,
+        calc_instructions as i64 - count as i64
     );
 }
 
@@ -176,47 +175,30 @@ fn cli_measure_aggregate_verify(
 ) {
     let sizes: Vec<usize> = pub_keys_msgs.iter().map(|(_, msg)| msg.len()).collect();
 
-    let no_threaded_instructions = calc_aggregate_verify_instructions_no_threaded(sizes.as_slice());
-    let threaded_instructions =
-        calc_aggregate_verify_instructions_threaded(no_threaded_instructions);
+    let mut calc_instructions = calc_aggregate_verify_instructions_no_threaded(sizes.as_slice());
 
-    if threaded {
-        let (_, count) = perf!(
-            "total_instructions_threaded",
+    let (_, count) = if threaded {
+        println!("aggregate_verify threaded");
+        calc_instructions = calc_aggregate_verify_instructions_threaded(calc_instructions);
+
+        perf!(
+            "total_instructions",
             aggregate_verify_bls12381_v1_threaded(pub_keys_msgs, agg_sig)
-        );
-        println!(
-            "{:30}: {}",
-            "calc_instructions_no_threaded", no_threaded_instructions
-        );
-        let diff = if count != 0 {
-            format!(" diff: {}", threaded_instructions as i64 - count as i64)
-        } else {
-            "".to_string()
-        };
-        println!(
-            "{:30}: {}{}",
-            "calc_instructions_threaded", threaded_instructions, diff
-        );
+        )
     } else {
-        let (_, count) = perf!(
-            "total_instructions_no_threaded",
+        println!("aggregate_verify");
+        perf!(
+            "total_instructions",
             aggregate_verify_bls12381_v1(pub_keys_msgs, agg_sig)
-        );
-        let diff = if count != 0 {
-            format!(" diff : {}", no_threaded_instructions as i64 - count as i64)
-        } else {
-            "".to_string()
-        };
-        println!(
-            "{:30}: {}{}",
-            "calc_instructions_no_threaded", no_threaded_instructions, diff
-        );
-        println!(
-            "{:30}: {}",
-            "calc_instructions_threaded", threaded_instructions
-        );
-    }
+        )
+    };
+
+    let diff = if count != 0 {
+        format!(" diff : {}", calc_instructions as i64 - count as i64)
+    } else {
+        "".to_string()
+    };
+    println!("{:30}: {}{}", "calc_instructions", calc_instructions, diff);
 }
 
 fn cli_cmd_measure_aggregate_verify(threaded: bool, cmd: &AggregateVerify) {
@@ -229,7 +211,6 @@ fn cli_cmd_measure_aggregate_verify(threaded: bool, cmd: &AggregateVerify) {
     let pub_keys_msgs: Vec<(Bls12381G1PublicKey, Vec<u8>)> =
         pks.iter().zip(msgs).map(|(pk, sk)| (*pk, sk)).collect();
 
-    println!("aggregate_verify");
     cli_measure_aggregate_verify(threaded, &pub_keys_msgs, &agg_sig);
 }
 
@@ -242,34 +223,36 @@ fn cli_measure_aggregate_verify_sizes(threaded: bool, cmd: &AggregateVerifySizes
     let pub_keys_msgs: Vec<(Bls12381G1PublicKey, Vec<u8>)> =
         pks.iter().zip(msgs).map(|(pk, sk)| (*pk, sk)).collect();
 
-    println!("aggregate_verify_sizes");
     cli_measure_aggregate_verify(threaded, &pub_keys_msgs, &agg_sig);
 }
 
 fn cli_measure_signature_aggregate(cmd: &SignatureAggregate) {
     let (_sks, _pks, _msg, sigs) = get_fast_aggregate_verify_test_data(cmd.sig_cnt, 100);
 
+    println!("signature_aggregate");
     let (_, count) = perf!("measured_sig_aggr", Bls12381G2Signature::aggregate(&sigs));
-    let calc_sig_aggr_instr_cnt = signature_aggregate_instructions(cmd.sig_cnt);
+    let calc_instructions = calc_signature_aggregate_instructions(cmd.sig_cnt);
 
     println!(
-        "{:20} instr:{} diff:{}",
-        "calc_sig_agr",
-        calc_sig_aggr_instr_cnt,
-        calc_sig_aggr_instr_cnt as i64 - count as i64
+        "{:30}: {} diff: {}",
+        "calc_instructions",
+        calc_instructions,
+        calc_instructions as i64 - count as i64
     );
 }
 
 fn cli_measure_hash_to_point(cmd: &HashToPoint) {
     let msg: Vec<u8> = vec![(cmd.msg_size % u8::MAX as usize) as u8; cmd.msg_size];
 
-    perf!("hash_to_point", hash_to_g2(&msg));
+    println!("hash_to_point");
+    perf!("total_instructions", hash_to_g2(&msg));
 }
 
 fn cli_measure_keccak256(cmd: &Verify) {
     let msg: Vec<u8> = vec![(cmd.msg_size % u8::MAX as usize) as u8; cmd.msg_size];
 
-    perf!("measured_keccak256", keccak256_hash(&msg));
+    println!("keccak25");
+    perf!("total_instructions", keccak256_hash(&msg));
 }
 
 pub fn run() {
