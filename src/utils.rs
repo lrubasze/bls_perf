@@ -49,19 +49,19 @@ macro_rules! perf {
                 (result, count)
             }
             "perf" => {
-                let mut group = perf_event::Group::new().unwrap();
-                let insns = perf_event::Builder::new()
-                    .group(&mut group)
+                let mut insns = perf_event::Builder::new()
                     .kind(perf_event::events::Hardware::INSTRUCTIONS)
+                    .inherit(true) // whether to inherit counter by new threads
                     .build()
                     .unwrap();
 
-                group.enable().unwrap();
+                insns.enable().unwrap();
                 let result = $closure;
-                group.disable().unwrap();
-                let counts = group.read().unwrap();
-                println!("{:30}: {:?}", $desc, counts[&insns]);
-                (result, counts[&insns])
+                insns.disable().unwrap();
+
+                let counts = insns.read().unwrap();
+                println!("{:30}: {:?}", $desc, counts);
+                (result, counts)
             }
             "none" => ($closure, 0),
             _ => panic!("measure method {:?} not supported", method),
